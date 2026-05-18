@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { logger } from './logger';
-import { getVolume } from './volumeControl';
+import { getVolume, getCooldownMs } from './config';
 
 const SOUNDS_DIR = path.resolve(__dirname, '../sounds');
 const DEFAULT_TONE = path.join(SOUNDS_DIR, 'complete.mp3');
@@ -30,11 +30,28 @@ interface ExecCommand {
   args: string[];
 }
 
+interface AudioJob {
+  type: SoundType;
+  resolve: () => void;
+  reject: (err: any) => void;
+}
+
 let cachedPlayerTemplate: ((file: string, id: string, vf: number, vp: number) => ExecCommand) | null = null;
+
+// Control de concurrencia y ráfagas
+const audioQueue: AudioJob[] = [];
+let isPlaying = false;
+const lastPlayedTimestamps: Record<SoundType, number> = {
+  complete: 0,
+  warning: 0,
+  attention: 0,
+  message: 0,
+  login: 0
+};
 
 /**
  * Ejecuta directamente un archivo binario en el kernel pasándole los argumentos en un vector limpio.
- * Inmune a la inyección de comandos de shell (CWE-78) y evita alarmas heurísticas de consolas ocultas.
+ * Inmune a la inyección de comandos de shell (CWE-78).
  */
 function runExecFileCommand(cmd: ExecCommand, timeoutMs: number = 10000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -49,10 +66,32 @@ function runExecFileCommand(cmd: ExecCommand, timeoutMs: number = 10000): Promis
 }
 
 /**
- * Reproduce un archivo de sonido adaptándose dinámicamente al sistema operativo (Windows, macOS o Linux).
- * Implementa un mecanismo de caché para usar el reproductor exitoso y evita lanzar procesos si está en silencio.
+ * Procesa secuencialmente los trabajos de audio en la cola (FIFO).
  */
-export async function playSound(type: SoundType): Promise<void> {
+async function processAudioQueue(): Promise<void> {
+  if (isPlaying || audioQueue.length === 0) {
+    return;
+  }
+
+  isPlaying = true;
+  const job = audioQueue.shift()!;
+
+  try {
+    await executeAudioProcess(job.type);
+    job.resolve();
+  } catch (err) {
+    job.reject(err);
+  } finally {
+    isPlaying = false;
+    // Continuar procesando la cola
+    processAudioQueue();
+  }
+}
+
+/**
+ * Lógica central que lanza el proceso del sistema operativo para reproducir el audio.
+ */
+async function executeAudioProcess(type: SoundType): Promise<void> {
   let file = SOUND_FILES[type];
   const id = SOUND_IDS[type];
 
@@ -68,10 +107,8 @@ export async function playSound(type: SoundType): Promise<void> {
   }
 
   const volFactor = Number((volPercent / 100).toFixed(2));
+  logger.info(`Reproduciendo sonido '${type}' (${file}) al ${volPercent}% en plataforma '${process.platform}'`);
 
-  logger.info(`Intentando reproducir sonido de tipo: '${type}' (${file}) al ${volPercent}% en plataforma '${process.platform}'`);
-
-  // Si ya tenemos un reproductor en caché que funcionó previamente, lo probamos primero
   if (cachedPlayerTemplate) {
     const cmd = cachedPlayerTemplate(file, id, volFactor, volPercent);
     try {
@@ -80,7 +117,7 @@ export async function playSound(type: SoundType): Promise<void> {
       return;
     } catch (error) {
       logger.warn(`El reproductor en caché falló (${cmd.bin}), buscando otra alternativa...`, error);
-      cachedPlayerTemplate = null; // Invalida la caché si falla
+      cachedPlayerTemplate = null;
     }
   }
 
@@ -154,4 +191,25 @@ export async function playSound(type: SoundType): Promise<void> {
   if (!success) {
     logger.warn(`Falló la reproducción del sonido '${type}' tras probar todos los reproductores disponibles en ${process.platform}.`);
   }
+}
+
+/**
+ * Reproduce un archivo de sonido encolándolo de forma segura y evitando saturación por ráfagas idénticas.
+ */
+export function playSound(type: SoundType): Promise<void> {
+  const now = Date.now();
+  const cooldownMs = getCooldownMs();
+
+  // Control de ráfagas (debouncer / cooldown)
+  if (now - lastPlayedTimestamps[type] < cooldownMs) {
+    logger.info(`Ráfaga de notificaciones detectada para '${type}'. Omitiendo sonido redundante (cooldown ${cooldownMs}ms).`);
+    return Promise.resolve();
+  }
+
+  lastPlayedTimestamps[type] = now;
+
+  return new Promise((resolve, reject) => {
+    audioQueue.push({ type, resolve, reject });
+    processAudioQueue();
+  });
 }

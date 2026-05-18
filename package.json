@@ -41,6 +41,20 @@
           "minimum": 0,
           "maximum": 100,
           "description": "Nivel de volumen (0 a 100) para las alertas y notificaciones sonoras."
+        },
+        "agenticSounds.cooldownMs": {
+          "type": "integer",
+          "default": 250,
+          "minimum": 0,
+          "maximum": 5000,
+          "description": "Tiempo mínimo de espera (en milisegundos) entre sonidos idénticos para evitar saturación por ráfagas."
+        },
+        "agenticSounds.maxInactiveHours": {
+          "type": "integer",
+          "default": 24,
+          "minimum": 1,
+          "maximum": 720,
+          "description": "Tiempo máximo (en horas) antes de limpiar de memoria los archivos de registro inactivos."
         }
       }
     }

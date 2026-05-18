@@ -2,14 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { watch, FSWatcher } from 'chokidar';
-import { updateFilePosition, processFileDelta, clearFilePositions } from './fileReader';
+import { updateFilePosition, processFileDelta, evictInactiveFiles, clearFilePositions } from './fileReader';
 import { playSound } from './audio';
 import { logger } from './logger';
 
 let activeWatcher: FSWatcher | null = null;
+let cleanupInterval: NodeJS.Timeout | null = null;
 
 /**
- * Inicia el observador del sistema de archivos sobre los registros de Antigravity.
+ * Inicia el observador del sistema de archivos sobre los registros de Antigravity
+ * y activa el temporizador periódico de limpieza de memoria.
  */
 export function startMonitoring(): void {
   try {
@@ -64,16 +66,27 @@ export function startMonitoring(): void {
       .on('error', (error: unknown) => {
         logger.error('Error en el monitor de sistema de archivos Chokidar', error);
       });
+
+    // Programar limpieza automática de memoria cada 15 minutos
+    cleanupInterval = setInterval(() => {
+      evictInactiveFiles();
+    }, 15 * 60 * 1000);
+
   } catch (error) {
     logger.error('Error crítico al iniciar la monitorización', error);
   }
 }
 
 /**
- * Detiene la monitorización y limpia los recursos.
+ * Detiene la monitorización y limpia los recursos y temporizadores.
  */
 export async function stopMonitoring(): Promise<void> {
   try {
+    if (cleanupInterval) {
+      clearInterval(cleanupInterval);
+      cleanupInterval = null;
+    }
+
     if (activeWatcher) {
       await activeWatcher.close();
       activeWatcher = null;
@@ -84,4 +97,3 @@ export async function stopMonitoring(): Promise<void> {
     logger.error('Error al intentar detener el monitoreo', error);
   }
 }
-
