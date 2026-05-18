@@ -1,0 +1,9 @@
+.vscode/**
+.github/**
+src/**
+tsconfig.json
+bun.lockb
+assets/icon.svg
+.gitignore
+.gitattributes
+.*

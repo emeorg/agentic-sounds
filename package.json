@@ -65,7 +65,7 @@
   },
   "scripts": {
     "clean": "rm -rf ./dist/*",
-    "build": "bun build ./src/extension.ts --outfile=./dist/extension.js --target=node --format=cjs --external=vscode",
+    "build": "bun build ./src/extension.ts --outfile=./dist/extension.js --target=node --format=cjs --external=vscode --minify",
     "package": "bun run clean && bun run build && vsce package --no-dependencies --allow-missing-repository --allow-star-activation"
   },
   "dependencies": {
