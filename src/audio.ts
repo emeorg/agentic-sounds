@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { logger } from './logger';
+import { getVolume } from './volumeControl';
 
 const SOUNDS_DIR = path.resolve(__dirname, '../sounds');
 const DEFAULT_TONE = path.join(SOUNDS_DIR, 'complete.mp3');
@@ -29,7 +30,7 @@ interface ExecCommand {
   args: string[];
 }
 
-let cachedPlayerTemplate: ((file: string, id: string) => ExecCommand) | null = null;
+let cachedPlayerTemplate: ((file: string, id: string, vf: number, vp: number) => ExecCommand) | null = null;
 
 /**
  * Ejecuta directamente un archivo binario en el kernel pasándole los argumentos en un vector limpio.
@@ -49,7 +50,7 @@ function runExecFileCommand(cmd: ExecCommand, timeoutMs: number = 10000): Promis
 
 /**
  * Reproduce un archivo de sonido adaptándose dinámicamente al sistema operativo (Windows, macOS o Linux).
- * Implementa un mecanismo de caché para usar el reproductor exitoso y evitar lanzar procesos redundantes.
+ * Implementa un mecanismo de caché para usar el reproductor exitoso y evita lanzar procesos si está en silencio.
  */
 export async function playSound(type: SoundType): Promise<void> {
   let file = SOUND_FILES[type];
@@ -60,14 +61,22 @@ export async function playSound(type: SoundType): Promise<void> {
     file = DEFAULT_TONE;
   }
 
-  logger.info(`Intentando reproducir sonido de tipo: '${type}' (${file}) en plataforma '${process.platform}'`);
+  const volPercent = getVolume();
+  if (volPercent === 0) {
+    logger.info(`Notificación sonora omitida para '${type}': el volumen está configurado en 0% (Silenciado).`);
+    return;
+  }
+
+  const volFactor = Number((volPercent / 100).toFixed(2));
+
+  logger.info(`Intentando reproducir sonido de tipo: '${type}' (${file}) al ${volPercent}% en plataforma '${process.platform}'`);
 
   // Si ya tenemos un reproductor en caché que funcionó previamente, lo probamos primero
   if (cachedPlayerTemplate) {
-    const cmd = cachedPlayerTemplate(file, id);
+    const cmd = cachedPlayerTemplate(file, id, volFactor, volPercent);
     try {
       await runExecFileCommand(cmd);
-      logger.info(`Sonido '${type}' reproducido con reproductor en caché: ${cmd.bin}`);
+      logger.info(`Sonido '${type}' reproducido con reproductor en caché al ${volPercent}%: ${cmd.bin}`);
       return;
     } catch (error) {
       logger.warn(`El reproductor en caché falló (${cmd.bin}), buscando otra alternativa...`, error);
@@ -75,24 +84,23 @@ export async function playSound(type: SoundType): Promise<void> {
     }
   }
 
-  const VOLUME = 1.0; // 100% (0dB). Valores > 1.0 saturan el servidor PipeWire/PulseAudio y activan el limitador de recorte bajando la ganancia real.
   const isWin = process.platform === 'win32';
   const isMac = process.platform === 'darwin';
 
-  let playerOptions: Array<{ name: string; getCmd: (f: string, i: string) => ExecCommand }> = [];
+  let playerOptions: Array<{ name: string; getCmd: (f: string, i: string, vf: number, vp: number) => ExecCommand }> = [];
 
   if (isWin) {
     playerOptions = [
       { 
         name: 'powershell (WMPlayer)', 
-        getCmd: (f: string) => ({
+        getCmd: (f: string, i: string, vf: number, vp: number) => ({
           bin: 'powershell',
           args: [
             '-WindowStyle', 'Hidden',
             '-NoProfile',
             '-NonInteractive',
             '-Command',
-            `$player = New-Object -ComObject WMPlayer.OCX; $player.URL = '${f}'; $player.controls.play(); while($player.playState -ne 1){ Start-Sleep -Milliseconds 100 }`
+            `$player = New-Object -ComObject WMPlayer.OCX; $player.settings.volume = ${vp}; $player.URL = '${f}'; $player.controls.play(); while($player.playState -ne 1){ Start-Sleep -Milliseconds 100 }`
           ]
         })
       },
@@ -112,18 +120,18 @@ export async function playSound(type: SoundType): Promise<void> {
     ];
   } else if (isMac) {
     playerOptions = [
-      { name: 'afplay', getCmd: (f: string) => ({ bin: 'afplay', args: [f] }) },
-      { name: 'mpv', getCmd: (f: string) => ({ bin: 'mpv', args: ['--no-video', f] }) }
+      { name: 'afplay', getCmd: (f: string, i: string, vf: number) => ({ bin: 'afplay', args: ['-v', String(vf), f] }) },
+      { name: 'mpv', getCmd: (f: string, i: string, vf: number, vp: number) => ({ bin: 'mpv', args: ['--no-video', `--volume=${vp}`, f] }) }
     ];
   } else {
     // Linux
     playerOptions = [
-      { name: 'pw-play', getCmd: (f: string) => ({ bin: 'pw-play', args: [`--volume=${VOLUME}`, f] }) },
-      { name: 'mpv', getCmd: (f: string) => ({ bin: 'mpv', args: ['--no-video', `--volume=${Math.round(VOLUME * 100)}`, f] }) },
-      { name: 'mpg123', getCmd: (f: string) => ({ bin: 'mpg123', args: ['-f', '49152', f] }) },
-      { name: 'paplay', getCmd: (f: string) => ({ bin: 'paplay', args: [f] }) },
-      { name: 'ffplay', getCmd: (f: string) => ({ bin: 'ffplay', args: ['-nodisp', '-autoexit', '-volume', '100', f] }) },
-      { name: 'play', getCmd: (f: string) => ({ bin: 'play', args: [f, 'vol', String(VOLUME)] }) },
+      { name: 'pw-play', getCmd: (f: string, i: string, vf: number) => ({ bin: 'pw-play', args: [`--volume=${vf}`, f] }) },
+      { name: 'mpv', getCmd: (f: string, i: string, vf: number, vp: number) => ({ bin: 'mpv', args: ['--no-video', `--volume=${vp}`, f] }) },
+      { name: 'mpg123', getCmd: (f: string, i: string, vf: number, vp: number) => ({ bin: 'mpg123', args: ['-f', String(Math.round(49152 * vf)), f] }) },
+      { name: 'paplay', getCmd: (f: string, i: string, vf: number) => ({ bin: 'paplay', args: [`--volume=${Math.round(65536 * vf)}`, f] }) },
+      { name: 'ffplay', getCmd: (f: string, i: string, vf: number, vp: number) => ({ bin: 'ffplay', args: ['-nodisp', '-autoexit', '-volume', String(vp), f] }) },
+      { name: 'play', getCmd: (f: string, i: string, vf: number) => ({ bin: 'play', args: [f, 'vol', String(vf)] }) },
       { name: 'canberra-gtk-play (file)', getCmd: (f: string) => ({ bin: 'canberra-gtk-play', args: [`--file=${f}`] }) },
       { name: 'canberra-gtk-play (id)', getCmd: (f: string, i: string) => ({ bin: 'canberra-gtk-play', args: [`--id=${i}`] }) }
     ];
@@ -131,12 +139,12 @@ export async function playSound(type: SoundType): Promise<void> {
 
   let success = false;
   for (const player of playerOptions) {
-    const cmd = player.getCmd(file, id);
+    const cmd = player.getCmd(file, id, volFactor, volPercent);
     try {
       await runExecFileCommand(cmd);
       success = true;
       cachedPlayerTemplate = player.getCmd;
-      logger.info(`Sonido '${type}' reproducido correctamente y guardado en caché con: ${player.name}`);
+      logger.info(`Sonido '${type}' reproducido correctamente al ${volPercent}% y guardado en caché con: ${player.name}`);
       break;
     } catch (error) {
       logger.warn(`Intento fallido con reproductor ${player.name}:`, error);

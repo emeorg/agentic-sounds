@@ -2,10 +2,14 @@ import * as vscode from 'vscode';
 import { startMonitoring, stopMonitoring } from './watcher';
 import { playSound } from './audio';
 import { logger } from './logger';
+import { initVolumeControl } from './volumeControl';
 
 export function activate(context: vscode.ExtensionContext) {
   logger.safeRun('Error crítico durante la activación de la extensión', () => {
     logger.info('Iniciando activación de la extensión Agentic Sounds en el IDE.');
+
+    // Inicializar el control de volumen y UI de la barra de estado
+    initVolumeControl(context);
 
     // Iniciar el monitoreo en segundo plano
     startMonitoring();
@@ -43,5 +47,3 @@ export async function deactivate(): Promise<void> {
     await stopMonitoring();
   })();
 }
-
-
