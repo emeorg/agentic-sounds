@@ -1,0 +1,9 @@
+.git
+.github
+.gitignore
+.vscode
+src
+tsconfig.json
+bun.lock
+bun.lockb
+*.vsix

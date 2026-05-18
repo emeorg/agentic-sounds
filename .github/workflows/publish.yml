@@ -1,0 +1,37 @@
+name: Publish Extension to Marketplaces
+
+on:
+  release:
+    types: [created]
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun Runtime
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: bun install
+
+      - name: Package Extension VSIX
+        run: bun run package
+
+      - name: Publish to Visual Studio Marketplace
+        run: npx @vscode/vsce publish --packagePath agentic-sounds-*.vsix -p ${{ secrets.VSCE_PAT }} --no-dependencies --allow-missing-repository --allow-star-activation
+
+      - name: Publish to Open VSX Registry
+        run: npx ovsx publish agentic-sounds-*.vsix -p ${{ secrets.OVSX_PAT }}

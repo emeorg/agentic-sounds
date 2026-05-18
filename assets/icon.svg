@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="grad" x1="120" y1="120" x2="420" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Main sparkle (smaller) -->
+  <path
+    d="
+      M256 180
+      C264 228 284 248 332 256
+      C284 264 264 284 256 332
+      C248 284 228 264 180 256
+      C228 248 248 228 256 180
+      Z
+    "
+    fill="url(#grad)"
+  />
+
+  <!-- Top-left sparkle -->
+  <path
+    d="
+      M148 196
+      C152 212 158 218 174 222
+      C158 226 152 232 148 248
+      C144 232 138 226 122 222
+      C138 218 144 212 148 196
+      Z
+    "
+    fill="url(#grad)"
+  />
+
+  <!-- Bottom-left sparkle -->
+  <path
+    d="
+      M178 318
+      C182 332 187 337 201 341
+      C187 345 182 350 178 364
+      C174 350 169 345 155 341
+      C169 337 174 332 178 318
+      Z
+    "
+    fill="url(#grad)"
+  />
+
+  <!-- Sound wave 1 -->
+  <path
+    d="M340 220
+       C362 244 362 268 340 292"
+    stroke="url(#grad)"
+    stroke-width="24"
+    stroke-linecap="round"
+  />
+
+  <!-- Sound wave 2 -->
+  <path
+    d="M392 172
+       C438 218 438 294 392 340"
+    stroke="url(#grad)"
+    stroke-width="24"
+    stroke-linecap="round"
+  />
+
+  <!-- Sound wave 3 -->
+  <path
+    d="M444 124
+       C514 194 514 318 444 388"
+    stroke="url(#grad)"
+    stroke-width="24"
+    stroke-linecap="round"
+  />
+</svg>
