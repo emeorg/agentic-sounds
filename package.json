@@ -30,6 +30,10 @@
       {
         "command": "antigravityAlert.setVolume",
         "title": "Agentic Sounds: Ajustar Volumen de Notificaciones"
+      },
+      {
+        "command": "antigravityAlert.soundboard",
+        "title": "Agentic Sounds: Catálogo de Sonidos (Soundboard)"
       }
     ],
     "configuration": {
